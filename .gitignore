@@ -1,0 +1,6 @@
+*~
+*.o
+tmp*
+9cc
+
+.vscode
