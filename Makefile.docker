@@ -1,3 +1,0 @@
-.PHONY: run
-run:
-	docker container run -it --rm -v $(PWD):/app --workdir /app gcc:9 bash
