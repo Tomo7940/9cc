@@ -4,12 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-// トークンの型を表す値
-enum {
-    TK_NUM = 256,
-    TK_EOF
-};
-
 // トークンの型
 typedef struct {
     int ty;
@@ -17,12 +11,36 @@ typedef struct {
     char *input;
 } Token;
 
+// ポジション
+int pos = 0;
 // 入力プログラム
 char *user_input;
-
 // トークナイズした結果のトークン列はこの配列に保存する
 // 100個以上のトークンは来ないものとする
 Token tokens[100];
+
+// トークンの型を表す値
+enum {
+    TK_NUM = 256,
+    TK_EOF
+};
+
+enum {
+    ND_NUM = 256,
+};
+
+typedef struct Node {
+    int ty;
+
+    struct Node *lhs;
+    struct Node *rhs;
+    int val;
+} Node;
+
+// プロトタイプ宣言
+Node *expr();
+Node *mul();
+Node *term();
 
 // エラーを報告するための関数
 // printfと同じ引数を取る
@@ -127,4 +145,67 @@ int main(int argc, char **argv) {
 
     printf("  ret\n");
     return 0;
+}
+
+Node *new_node(int ty, Node *lhs, Node *rhs) {
+    Node *node = malloc(sizeof(Node));
+
+    node->ty = ty;
+    node->lhs = lhs;
+    node->rhs = rhs;
+    return node;
+}
+
+Node *new_node_num(int val) {
+    Node *node = malloc(sizeof(Node));
+
+    node->ty = ND_NUM;
+    node->val = val;
+    return node;
+}
+
+int consume(int ty) {
+    if (tokens[pos].ty == ty)
+        return 0;
+    pos++;
+    return 1;
+}
+
+Node *expr() {
+    Node *node = mul();
+    
+    for (;;) {
+        if (consume('+'))
+            node = new_node('+', node, mul());
+        else if (consume('-'))
+            node = new_node('-', node, mul());
+        else
+            return node;
+    }
+}
+
+Node *term() {
+    if (consume('(')) {
+        Node *node = expr();
+        if (consume(')'))
+            error_at(tokens[pos].input, "開きカッコに対応する閉じカッコがありません");
+        return node;
+    }
+
+    if (tokens[pos].ty == TK_NUM)
+        return new_node_num(tokens[pos].val);
+    
+    error_at(tokens[pos].input, "数値でも閉じカッコでもないトークンです");
+}
+Node *mul() {
+    Node *node = term();
+
+    for (;;) {
+        if (consume('*')) 
+            node = new_node('*', node, term());
+        else if (consume('/'))
+            node = new_node('/', node, term());
+        else
+            return node;
+    }
 }
