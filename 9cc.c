@@ -13,8 +13,10 @@ typedef struct {
 
 // ポジション
 int pos = 0;
+
 // 入力プログラム
 char *user_input;
+
 // トークナイズした結果のトークン列はこの配列に保存する
 // 100個以上のトークンは来ないものとする
 Token tokens[100];
@@ -31,7 +33,6 @@ enum {
 
 typedef struct Node {
     int ty;
-
     struct Node *lhs;
     struct Node *rhs;
     int val;
@@ -41,6 +42,8 @@ typedef struct Node {
 Node *expr();
 Node *mul();
 Node *term();
+Node *unary();
+void gen();
 
 // エラーを報告するための関数
 // printfと同じ引数を取る
@@ -63,9 +66,7 @@ void error_at(char *loc, char *msg) {
 
 // user_inputが指し示す文字列を
 // トークンに分割してtokensに保存する
-void tokenize() {
-    char *p = user_input;
-
+void tokenize(char *p) {
     int i = 0;
     while(*p) {
         // 空白文字をスキップ
@@ -74,7 +75,7 @@ void tokenize() {
             continue;
         }
 
-        if (*p == '+' || *p == '-') {
+        if (*p == '+' || *p == '-' || *p == '*' || *p == '/' || *p == '(' || *p == ')') {
             tokens[i].ty = *p;
             tokens[i].input = p;
             i++;
@@ -105,51 +106,24 @@ int main(int argc, char **argv) {
 
     // トークナイズする
     user_input = argv[1];
-    tokenize();
+    tokenize(argv[1]);
+
+    Node *node = expr();
 
     // アセンブリの前半部分を出力
     printf(".intel_syntax noprefix\n");
     printf(".global main\n");
     printf("main:\n");
 
-    // 式の最初は数でなければならないので、それをチェックして
-    // 最初のmov命令を出力
-    if (tokens[0].ty != TK_NUM)
-        error_at(tokens[0].input, "数ではありません");
-    printf("  mov rax, %d\n", tokens[0].val);
+    gen(node);
 
-    // `+ <数>`あるいは`- <数>`というトークンの並びを消費しつつ
-    // アセンブリを出力
-    int i = 1;
-    while (tokens[i].ty != TK_EOF) {
-        if (tokens[i].ty == '+') {
-            i++;
-            if (tokens[i].ty != TK_NUM)
-                error_at(tokens[i].input, "数ではありません");
-            printf("  add rax, %d\n", tokens[i].val);
-            i++;
-            continue;
-        }
-
-        if (tokens[i].ty == '-') {
-            i++;
-            if (tokens[i].ty != TK_NUM)
-                error_at(tokens[i].input, "数ではありません");
-            printf("  sub rax, %d\n", tokens[i].val);
-            i++;
-            continue;
-        }
-
-        error_at(tokens[i].input, "予期しないトークンです");
-    }
-
+    printf("  pop rax\n");
     printf("  ret\n");
     return 0;
 }
 
 Node *new_node(int ty, Node *lhs, Node *rhs) {
     Node *node = malloc(sizeof(Node));
-
     node->ty = ty;
     node->lhs = lhs;
     node->rhs = rhs;
@@ -158,14 +132,13 @@ Node *new_node(int ty, Node *lhs, Node *rhs) {
 
 Node *new_node_num(int val) {
     Node *node = malloc(sizeof(Node));
-
     node->ty = ND_NUM;
     node->val = val;
     return node;
 }
 
 int consume(int ty) {
-    if (tokens[pos].ty == ty)
+    if (tokens[pos].ty != ty)
         return 0;
     pos++;
     return 1;
@@ -187,25 +160,63 @@ Node *expr() {
 Node *term() {
     if (consume('(')) {
         Node *node = expr();
-        if (consume(')'))
+        if (!consume(')'))
             error_at(tokens[pos].input, "開きカッコに対応する閉じカッコがありません");
         return node;
     }
 
     if (tokens[pos].ty == TK_NUM)
-        return new_node_num(tokens[pos].val);
+        return new_node_num(tokens[pos++].val);
     
     error_at(tokens[pos].input, "数値でも閉じカッコでもないトークンです");
 }
+
 Node *mul() {
-    Node *node = term();
+    Node *node = unary();
 
     for (;;) {
         if (consume('*')) 
-            node = new_node('*', node, term());
+            node = new_node('*', node, unary());
         else if (consume('/'))
-            node = new_node('/', node, term());
+            node = new_node('/', node, unary());
         else
             return node;
     }
+}
+
+Node *unary() {
+    if (consume('-'))
+        return new_node('-', new_node_num(0), term());
+    return term();
+}
+
+void gen(Node *node) {
+    if (node->ty == ND_NUM) {
+        printf("  push %d\n", node->val);
+        return;
+    }
+
+    gen(node->lhs);
+    gen(node->rhs);
+
+    printf("  pop rdi\n");
+    printf("  pop rax\n");
+
+    switch (node->ty) {
+        case '+':
+            printf("  add rax, rdi\n");
+            break;
+        case '-':
+            printf("  sub rax, rdi\n");
+            break;
+        case '*':
+            printf("  imul rdi\n");
+            break;
+        case '/':
+            printf("  cqo\n");
+            printf("  idiv rdi\n");
+            break;
+    }
+
+    printf("  push rax\n");
 }

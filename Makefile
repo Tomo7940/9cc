@@ -7,3 +7,6 @@ test: 9cc
 
 clean:
 	rm -f 9cc *.o *~ tmp*
+
+run:
+	docker container run -it --rm -v $(PWD):/app --workdir /app gcc:9 bash
